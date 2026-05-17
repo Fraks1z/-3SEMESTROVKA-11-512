@@ -1,313 +1,317 @@
 import time
-from random import randint, sample
-from os import mkdir, listdir
+import random
+import os
+import sys
 import matplotlib.pyplot as plt
 
-class TwoThreeNode:
-    def __init__(self):
-        self.keys = []           # Ключи (1 или 2 элемента)
-        self.children = []       # Дочерние узлы (0, 2 или 3 элемента)
-        self.parent = None       # Родительский узел
+# ------------------------------------------------------------
+# Функция для получения пути к рабочему столу 
+# ------------------------------------------------------------
+def get_desktop_path():
+    if sys.platform.startswith('win'):
+        userprofile = os.environ.get('USERPROFILE')
+        if userprofile:
+            desktop = os.path.join(userprofile, 'Desktop')
+            if os.path.exists(desktop):
+                return desktop
+        home = os.path.expanduser('~')
+        desktop_alt = os.path.join(home, 'Desktop')
+        if os.path.exists(desktop_alt):
+            return desktop_alt
+    elif sys.platform == 'darwin':
+        desktop = os.path.join(os.path.expanduser('~'), 'Desktop')
+        if os.path.exists(desktop):
+            return desktop
+    else:
+        desktop = os.path.join(os.path.expanduser('~'), 'Desktop')
+        if os.path.exists(desktop):
+            return desktop
+    return os.path.expanduser('~')
+
+# ------------------------------------------------------------
+# Класс узла 2-3 дерева
+# ------------------------------------------------------------
+class Node:
+    def __init__(self, keys=None, children=None):
+        self.keys = keys if keys is not None else []
+        self.children = children if children is not None else []
 
     def is_leaf(self):
         return len(self.children) == 0
 
-    def is_two_node(self):
-        return len(self.keys) == 1
+    def is_full(self):
+        return len(self.keys) == 3
 
-    def is_three_node(self):
+    def has_2_keys(self):
         return len(self.keys) == 2
 
+    def has_1_key(self):
+        return len(self.keys) == 1
 
+# ------------------------------------------------------------
+# Класс 2-3 дерева 
+# ------------------------------------------------------------
 class TwoThreeTree:
     def __init__(self):
         self.root = None
-        self.comparisons = 0      # счётчик сравнений для измерения шагов
+        self.comparisons_count = 0
 
     def reset_counter(self):
-        self.comparisons = 0
+        self.comparisons_count = 0
 
-    # ------------------------- Поиск (с подсчётом сравнений) -------------------------
+    # ---------- Поиск ----------
     def search(self, key):
         self.reset_counter()
-        return self._search_recursive(self.root, key)
+        return self._search(self.root, key)
 
-    def _search_recursive(self, node, key):
+    def _search(self, node, key):
         if node is None:
             return False
-        self.comparisons += 1   # проверка key in node.keys или хотя бы первое сравнение
+        self.comparisons_count += 1
         if key in node.keys:
             return True
-
+        if not node.keys:
+            return False
         if key < node.keys[0]:
-            child_idx = 0
-            self.comparisons += 1
-        elif node.is_two_node() or key < node.keys[1]:
-            child_idx = 1
-            self.comparisons += 2
+            idx = 0
+        elif len(node.keys) == 1 or key < node.keys[1]:
+            idx = 1
         else:
-            child_idx = 2
-            self.comparisons += 2
-
-        if child_idx < len(node.children):
-            return self._search_recursive(node.children[child_idx], key)
+            idx = 2
+        if idx < len(node.children):
+            return self._search(node.children[idx], key)
         return False
--
+
+    # ---------- Вставка ----------
     def insert(self, key):
         self.reset_counter()
         if self.root is None:
-            self.root = TwoThreeNode()
-            self.root.keys.append(key)
+            self.root = Node([key])
             return
-        new_root = self._insert_recursive(self.root, key)
-        if new_root:
+        new_root = self._insert(self.root, key)
+        if new_root is not None:
             self.root = new_root
 
-    def _insert_recursive(self, node, key):
-        self.comparisons += 1
+    def _insert(self, node, key):
         if node.is_leaf():
             node.keys.append(key)
             node.keys.sort()
-            if len(node.keys) == 3:
-                return self._split_node(node)
+            if node.is_full():
+                return self._split(node)
             return None
-
-        self.comparisons += 1
         if key < node.keys[0]:
-            child_idx = 0
-        elif node.is_two_node() or key < node.keys[1]:
-            child_idx = 1
-            self.comparisons += 1
+            idx = 0
+        elif len(node.keys) == 1 or key < node.keys[1]:
+            idx = 1
         else:
-            child_idx = 2
-            self.comparisons += 1
-
-        child = node.children[child_idx]
-        new_child = self._insert_recursive(child, key)
-
-        if new_child:
-            node.children.pop(child_idx)
-            if new_child.keys[0] < node.keys[0]:
-                node.children.insert(child_idx, new_child)
-                node.children.insert(child_idx + 1, new_child.children[1])
-            else:
-                node.children.insert(child_idx, new_child.children[0])
-                node.children.insert(child_idx + 1, new_child)
-            node.keys = sorted(node.keys + [new_child.keys[0]])
-            if len(node.keys) == 3:
-                return self._split_node(node)
+            idx = 2
+        child = node.children[idx]
+        new_child = self._insert(child, key)
+        if new_child is None:
+            return None
+        node.children.pop(idx)
+        if new_child.keys[0] < node.keys[0]:
+            node.children.insert(idx, new_child.children[0])
+            node.children.insert(idx + 1, new_child.children[1])
+        else:
+            node.children.insert(idx, new_child.children[0])
+            node.children.insert(idx + 1, new_child.children[1])
+        node.keys.append(new_child.keys[0])
+        node.keys.sort()
+        if node.is_full():
+            return self._split(node)
         return None
 
-    def _split_node(self, node):
-        left_node = TwoThreeNode()
-        right_node = TwoThreeNode()
-        left_node.keys.append(node.keys[0])
-        right_node.keys.append(node.keys[2])
-        if not node.is_leaf():
-            left_node.children = node.children[:2]
-            right_node.children = node.children[2:]
-            for child in left_node.children:
-                child.parent = left_node
-            for child in right_node.children:
-                child.parent = right_node
-        parent_node = TwoThreeNode()
-        parent_node.keys.append(node.keys[1])
-        parent_node.children = [left_node, right_node]
-        left_node.parent = parent_node
-        right_node.parent = parent_node
-        return parent_node
+    def _split(self, node):
+        left = Node([node.keys[0]], node.children[:2] if not node.is_leaf() else [])
+        right = Node([node.keys[2]], node.children[2:] if not node.is_leaf() else [])
+        parent = Node([node.keys[1]], [left, right])
+        return parent
 
+    # ---------- Удаление ----------
     def delete(self, key):
         self.reset_counter()
         if self.root is None:
             return
-        self._delete_recursive(self.root, key)
-        if self.root and self.root.is_leaf() and len(self.root.keys) == 0:
-            self.root = None
+        self.root = self._delete(self.root, key)
+        if self.root and len(self.root.keys) == 0 and self.root.children:
+            self.root = self.root.children[0]
 
-    def _delete_recursive(self, node, key):
-        self.comparisons += 1
+    def _delete(self, node, key):
+        """Рекурсивно удаляет ключ из поддерева node, возвращает новый корень поддерева."""
+        if node is None:
+            return None
+        
         if key in node.keys:
-            if not node.is_leaf():
-                successor = self._find_successor(node, key)
-                idx = node.keys.index(key)
-                node.keys[idx] = successor
-                self._delete_recursive(node.children[idx + 1], successor)
-            else:
+            if node.is_leaf():
                 node.keys.remove(key)
-                if len(node.keys) == 0 and node != self.root:
-                    self._restore_balance(node)
-        else:
-            self.comparisons += 1
-            if key < node.keys[0]:
-                child_idx = 0
-            elif node.is_two_node() or key < node.keys[1]:
-                child_idx = 1
-                self.comparisons += 1
+                if not node.keys:
+                    return None
+                return node
             else:
-                child_idx = 2
-                self.comparisons += 1
-            if child_idx < len(node.children):
-                self._delete_recursive(node.children[child_idx], key)
-
-    def _find_successor(self, node, key):
-        idx = node.keys.index(key)
-        child = node.children[idx + 1]
-        while not child.is_leaf():
-            child = child.children[0]
-        return child.keys[0]
-
-    def _restore_balance(self, node):
-        parent = node.parent
-        if parent is None:
-            return
-        node_idx = parent.children.index(node)
-        if node_idx > 0:
-            left_sibling = parent.children[node_idx - 1]
-            if left_sibling.is_three_node():
-                self._borrow_from_left(node, left_sibling, parent, node_idx)
-                return
-        if node_idx < len(parent.children) - 1:
-            right_sibling = parent.children[node_idx + 1]
-            if right_sibling.is_three_node():
-                self._borrow_from_right(node, right_sibling, parent, node_idx)
-                return
-        if node_idx > 0:
-            self._merge_with_left(node, parent, node_idx)
+                idx = node.keys.index(key)
+                if idx + 1 >= len(node.children):
+                    return node
+                right_child = node.children[idx + 1]
+                succ = self._get_min(right_child)
+                if succ is None:
+                    return node
+                node.keys[idx] = succ
+                new_right_child = self._delete(right_child, succ)
+                node.children[idx + 1] = new_right_child
+                if new_right_child is None:
+                    node.children.pop(idx + 1)
+                if len(node.keys) == 0 and node.children:
+                    if len(node.children) == 1:
+                        return node.children[0]
+                    elif len(node.children) == 2:
+                        merged = Node()
+                        merged.keys = node.children[0].keys + node.children[1].keys
+                        merged.keys.sort()
+                        merged.children = node.children[0].children + node.children[1].children
+                        return merged
+                return node
         else:
-            self._merge_with_right(node, parent, node_idx)
+            if not node.keys:
+                if node.children:
+                    return node.children[0]
+                return None
+            if key < node.keys[0]:
+                idx = 0
+            elif len(node.keys) == 1 or key < node.keys[1]:
+                idx = 1
+            else:
+                idx = 2
+            if idx >= len(node.children):
+                
+                return node
 
-    def _borrow_from_left(self, node, left_sibling, parent, node_idx):
-        node.keys.append(parent.keys[node_idx - 1])
-        node.keys.sort()
-        borrowed_key = left_sibling.keys.pop()
-        parent.keys[node_idx - 1] = borrowed_key
-        if not left_sibling.is_leaf():
-            borrowed_child = left_sibling.children.pop()
-            node.children.insert(0, borrowed_child)
-            borrowed_child.parent = node
+            new_child = self._delete(node.children[idx], key)
+            node.children[idx] = new_child
 
-    def _borrow_from_right(self, node, right_sibling, parent, node_idx):
-        node.keys.append(parent.keys[node_idx])
-        node.keys.sort()
-        borrowed_key = right_sibling.keys.pop(0)
-        parent.keys[node_idx] = borrowed_key
-        if not right_sibling.is_leaf():
-            borrowed_child = right_sibling.children.pop(0)
-            node.children.append(borrowed_child)
-            borrowed_child.parent = node
+            if new_child is None:
+                node.children.pop(idx)
 
-    def _merge_with_left(self, node, parent, node_idx):
-        left_sibling = parent.children[node_idx - 1]
-        left_sibling.keys.append(parent.keys[node_idx - 1])
-        left_sibling.keys.extend(node.keys)
-        left_sibling.keys.sort()
-        if not node.is_leaf():
-            left_sibling.children.extend(node.children)
-            for child in node.children:
-                child.parent = left_sibling
-        parent.keys.pop(node_idx - 1)
-        parent.children.pop(node_idx)
-        if len(parent.keys) == 0 and parent != self.root:
-            self._restore_balance(parent)
+            if len(node.keys) == 0 and node.children:
 
-    def _merge_with_right(self, node, parent, node_idx):
-        right_sibling = parent.children[node_idx + 1]
-        node.keys.append(parent.keys[node_idx])
-        node.keys.extend(right_sibling.keys)
-        node.keys.sort()
-        if not right_sibling.is_leaf():
-            node.children.extend(right_sibling.children)
-            for child in right_sibling.children:
-                child.parent = node
-        parent.keys.pop(node_idx)
-        parent.children.pop(node_idx + 1)
-        if len(parent.keys) == 0 and parent != self.root:
-            self._restore_balance(parent)
+                if len(node.children) == 1:
+                    return node.children[0]
+                elif len(node.children) == 2:
+                    left = node.children[0]
+                    right = node.children[1]
+                    merged = Node()
+                    merged.keys = left.keys + right.keys
+                    merged.keys.sort()
+                    merged.children = left.children + right.children
+                    return merged
+            return node
 
+    def _get_min(self, node):
+        """Возвращает минимальный ключ в поддереве node."""
+        if node is None:
+            return None
+        while not node.is_leaf():
+            node = node.children[0]
+        return node.keys[0] if node.keys else None
 
+# ------------------------------------------------------------
+# Декоратор для замера времени
+# ------------------------------------------------------------
 def time_measure(func):
     def wrapper(*args, **kwargs):
-        started = time.perf_counter()
+        start = time.perf_counter()
         result = func(*args, **kwargs)
-        elapsed = time.perf_counter() - started
+        elapsed = time.perf_counter() - start
         return result, elapsed
     return wrapper
+
 TwoThreeTree.insert = time_measure(TwoThreeTree.insert)
 TwoThreeTree.delete = time_measure(TwoThreeTree.delete)
 
-
-# ---------------------- Генерация данных ----------------------
+# ------------------------------------------------------------
+# Генерация данных
+# ------------------------------------------------------------
 def generate_data(n=10000, low=-10000, high=10000):
-    # Создаём папку, если её нет
-    if 'meanings' not in listdir():
-        mkdir('meanings')
-    data = [randint(low, high) for _ in range(n)]
-    with open('meanings/input_data.txt', 'w') as f:
+    desktop_path = get_desktop_path()
+    data_dir = os.path.join(desktop_path, 'meanings')
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir)
+    data = [random.randint(low, high) for _ in range(n)]
+    with open(os.path.join(data_dir, 'input_data.txt'), 'w', encoding='utf-8') as f:
         for val in data:
             f.write(f"{val}\n")
     return data
 
-
+# ------------------------------------------------------------
+# Основная программа
+# ------------------------------------------------------------
 def main():
-    # 1. Генерация массива из 10 000 целых чисел
     print("Генерация 10 000 случайных чисел...")
     data = generate_data()
-    print(f"Сгенерировано {len(data)} чисел, сохранены в meanings/input_data.txt")
+    print(f"Сгенерировано {len(data)} чисел, сохранены в {os.path.join(get_desktop_path(), 'meanings/input_data.txt')}")
 
-    # 2. Поэлементная вставка всех чисел с замерами времени и шагов
-    print("\n--- Вставка 10 000 элементов ---")
     tree = TwoThreeTree()
+
+    # 1. Вставка всех элементов с замерами
+    print("\n--- Вставка 10 000 элементов ---")
     insert_times = []
     insert_steps = []
-
     for key in data:
-        # insert возвращает (None, время) благодаря декоратору
         _, t = tree.insert(key)
         insert_times.append(t)
-        insert_steps.append(tree.comparisons)   # после вставки счётчик уже накоплен
+        insert_steps.append(tree.comparisons_count)
 
     avg_insert_time = sum(insert_times) / len(insert_times)
     avg_insert_steps = sum(insert_steps) / len(insert_steps)
     print(f"Среднее время вставки: {avg_insert_time:.8f} сек")
-    print(f"Среднее количество сравнений при вставке: {avg_insert_steps:.2f}")
+    print(f"Среднее число сравнений при вставке: {avg_insert_steps:.2f}")
 
-    # 3. Поиск 100 случайных элементов (из сгенерированного массива)
-    search_sample = sample(data, 100)
+    # 2. Поиск 100 случайных элементов
+    search_sample = random.sample(data, 100)
     print("\n--- Поиск 100 случайных элементов ---")
     search_times = []
     search_steps = []
     for key in search_sample:
         start = time.perf_counter()
-        tree.search(key)      # поиск сам обнуляет и заполняет comparisons
+        tree.search(key)
         elapsed = time.perf_counter() - start
         search_times.append(elapsed)
-        search_steps.append(tree.comparisons)
+        search_steps.append(tree.comparisons_count)
 
     avg_search_time = sum(search_times) / len(search_times)
     avg_search_steps = sum(search_steps) / len(search_steps)
     print(f"Среднее время поиска: {avg_search_time:.8f} сек")
-    print(f"Среднее количество сравнений при поиске: {avg_search_steps:.2f}")
+    print(f"Среднее число сравнений при поиске: {avg_search_steps:.2f}")
 
-    # 4. Удаление 1000 случайных элементов
-    delete_sample = sample(data, 1000)
+    # 3. Удаление 1000 случайных элементов
+    delete_sample = random.sample(data, 1000)
     print("\n--- Удаление 1000 случайных элементов ---")
     delete_times = []
     delete_steps = []
     for key in delete_sample:
-        _, t = tree.delete(key)
-        delete_times.append(t)
-        delete_steps.append(tree.comparisons)
+        try:
+            _, t = tree.delete(key)
+            delete_times.append(t)
+            delete_steps.append(tree.comparisons_count)
+        except Exception as e:
+            print(f"Ошибка при удалении {key}: {e}")
 
-    avg_delete_time = sum(delete_times) / len(delete_times)
-    avg_delete_steps = sum(delete_steps) / len(delete_steps)
-    print(f"Среднее время удаления: {avg_delete_time:.8f} сек")
-    print(f"Среднее количество сравнений при удалении: {avg_delete_steps:.2f}")
+    if delete_times:
+        avg_delete_time = sum(delete_times) / len(delete_times)
+        avg_delete_steps = sum(delete_steps) / len(delete_steps)
+        print(f"Среднее время удаления: {avg_delete_time:.8f} сек")
+        print(f"Среднее число сравнений при удалении: {avg_delete_steps:.2f}")
+    else:
+        print("Не удалось выполнить ни одного удаления.")
+        avg_delete_time = 0
+        avg_delete_steps = 0
 
-    # 5. Сохранение результатов в файл
-    with open("results.txt", "w") as f:
+    # Сохранение результатов на рабочем столе
+    desktop_path = get_desktop_path()
+    results_file = os.path.join(desktop_path, "results.txt")
+    with open(results_file, "w", encoding="utf-8") as f:
         f.write("РЕЗУЛЬТАТЫ ИЗМЕРЕНИЙ ДЛЯ 2-3 ДЕРЕВА\n")
-        f.write("====================================\n")
+        f.write("===================================\n")
         f.write(f"Вставка (10 000 элементов):\n")
         f.write(f"  Среднее время: {avg_insert_time:.10f} сек\n")
         f.write(f"  Среднее число сравнений: {avg_insert_steps:.2f}\n\n")
@@ -317,11 +321,14 @@ def main():
         f.write(f"Удаление (1000 элементов):\n")
         f.write(f"  Среднее время: {avg_delete_time:.10f} сек\n")
         f.write(f"  Среднее число сравнений: {avg_delete_steps:.2f}\n")
-    print("\nРезультаты сохранены в results.txt")
 
-    # 6. Построение графиков (для сравнения теории с практикой)
+    print(f"\nРезультаты сохранены в {results_file}")
+
+    # Построение графиков
     try:
+        plot_file = os.path.join(desktop_path, "analysis.png")
         fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+
         axes[0, 0].hist(insert_steps, bins=30, color='blue', alpha=0.7)
         axes[0, 0].set_title('Распределение шагов при вставке')
         axes[0, 0].set_xlabel('Количество сравнений')
@@ -330,26 +337,29 @@ def main():
         axes[0, 1].hist(search_steps, bins=20, color='green', alpha=0.7)
         axes[0, 1].set_title('Распределение шагов при поиске')
         axes[0, 1].set_xlabel('Количество сравнений')
+        axes[0, 1].set_ylabel('Частота')
 
         axes[1, 0].hist(delete_steps, bins=30, color='red', alpha=0.7)
         axes[1, 0].set_title('Распределение шагов при удалении')
         axes[1, 0].set_xlabel('Количество сравнений')
+        axes[1, 0].set_ylabel('Частота')
 
         axes[1, 1].bar(['Insert', 'Search', 'Delete'],
                        [avg_insert_steps, avg_search_steps, avg_delete_steps],
                        color=['blue', 'green', 'red'])
-        axes[1, 1].axhline(y=13.3, color='black', linestyle='--', label='log2(10000) ≈ 13.3')
+        axes[1, 1].axhline(y=13.3, color='black', linestyle='--', label='log₂(10 000) ≈ 13.3')
         axes[1, 1].set_title('Среднее число сравнений vs теоретическая оценка')
         axes[1, 1].set_ylabel('Среднее количество сравнений')
         axes[1, 1].legend()
+
         plt.tight_layout()
-        plt.savefig('analysis.png')
-        print("Графики сохранены в analysis.png")
+        plt.savefig(plot_file, dpi=150, bbox_inches='tight')
+        plt.close(fig)
+        print(f"Графики сохранены в {plot_file}")
     except Exception as e:
-        print(f"Не удалось построить графики (возможно, нет matplotlib): {e}")
+        print(f"Не удалось построить графики: {e}")
 
-    print("\nЭксперимент завершён.")
-
+    print("\nЭксперимент завершён успешно!")
 
 if __name__ == "__main__":
     main()
